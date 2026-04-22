@@ -39,7 +39,7 @@ This initiative ships in eight sequential PRs. Every PR must:
 | ----- | ------------------------------------------------------- | --------- |
 | 0     | Foundations: package skeleton, feature gate, docs       | ✅ landed |
 | 1     | Configuration: typed config, personas, YAML loader      | ✅ landed |
-| 2     | Node identity, state machine, transport                 | 🚧 in progress |
+| 2     | Node identity, state machine, transport                 | ✅ landed |
 | 3     | Secondary mode runtime                                  | ⏳        |
 | 4     | SPPR pipeline stage                                     | ⏳        |
 | 5a    | Orchestrator scheduler + starvation monitor             | ⏳        |
