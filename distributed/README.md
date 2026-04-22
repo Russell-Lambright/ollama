@@ -19,6 +19,7 @@ The authoritative specification is [`../DISTRIBUTED_ARCHITECTURE.md`](../DISTRIB
 | `distributed/secondary`     | Secondary mode runtime (sync → available → execute)             | 3     |
 | `distributed/orchestrator`  | Primary scheduler, starvation monitor, execution/correlation    | 5     |
 | `distributed/modelsync`     | Model fan-out and manifest-diff sync                            | 6     |
+| `distributed/dashboard`     | HTTP snapshot API + single-page UI for operators                | 7     |
 
 Two new packages live outside `distributed/`:
 
@@ -45,8 +46,8 @@ This initiative ships in eight sequential PRs. Every PR must:
 | 5a    | Orchestrator scheduler + starvation monitor             | ✅ landed |
 | 5b    | Execution, correlation, QA coherence pass               | ✅ landed |
 | 6     | Model synchronization                                   | ✅ landed |
-| 7     | Distributed Dashboard UI                                | ⏳        |
-| 8     | Integration tests & coverage gate (≥ 90 % on new code)  | ⏳        |
+| 7     | Distributed Dashboard UI                                | 🚧 in progress |
+| 8     | Integration tests & coverage gate (≥ 90 % on new code)  | 🚧 in progress |
 
 ## Cross-cutting rules
 
