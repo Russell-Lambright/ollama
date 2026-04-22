@@ -261,7 +261,7 @@ func TestVHDXStorageConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		got, err := v.Load(context.Background(), i)
 		if err != nil {
 			t.Fatalf("Load %d: %v", i, err)
