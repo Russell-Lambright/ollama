@@ -44,6 +44,38 @@ chains, emitted as a strict JSON schema that the orchestrator can schedule on.
   overridable per-request and via `OLLAMA_SPPR_MODEL` for tests).
 - Degrades gracefully on malformed output (single-segment fallback).
 
+### 2a. Prompt Expander (optional pre-SPPR stage)
+
+An **optional** stage that runs *before* SPPR and rewrites the prompt into
+a more verbose but semantically equivalent form, giving SPPR more surface
+area to segment on.
+
+- Disabled by default; enable via `prompt_expander.enabled: true` in
+  `~/.ollama/distributed.yaml` after measuring that it improves
+  segmentation quality for your workload.
+- Strict contract: the expander may add verbosity, restate, enumerate, or
+  rephrase, but **must not** alter meaning, add new facts, or remove
+  information. A guard discards expansions above `max_expansion_ratio`
+  (default 3×) and reverts to the original prompt.
+- Reuses the SPPR model by default (`prompt_expander.model: ""`) so
+  operators don't have to configure two.
+
+### 2b. Small-job fallback
+
+For jobs that are too small to benefit from distribution, the framework
+**skips the distributed pipeline entirely** and executes the job on a
+single node (standalone-equivalent). Two configurable thresholds, either
+of which triggers fallback:
+
+| Field                              | Default | Meaning                                                     |
+| ---------------------------------- | ------- | ----------------------------------------------------------- |
+| `small_job.prompt_rune_threshold`  | 400     | Raw prompts under this many runes skip SPPR entirely        |
+| `small_job.min_segments`           | 2       | If SPPR emits fewer than N segments, run on a single node   |
+
+Set either to `0` to disable that particular check. The fallback path is
+normal success (not an error) — the caller still receives a response; it
+just wasn't sharded.
+
 ## 3. Persona management
 
 - Personas are predefined in configuration (`~/.ollama/distributed.yaml`).

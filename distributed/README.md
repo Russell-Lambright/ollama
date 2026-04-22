@@ -22,6 +22,8 @@ The authoritative specification is [`../DISTRIBUTED_ARCHITECTURE.md`](../DISTRIB
 
 Two new packages live outside `distributed/`:
 
+- `expander/` — Prompt Expander (optional pre-SPPR stage; adds verbosity
+  without changing meaning).
 - `sppr/` — Segment Preprocessing Prompt Renderer (pipeline stage).
 - `integration/distributed_test.go` — Testcontainers-based integration tests.
 

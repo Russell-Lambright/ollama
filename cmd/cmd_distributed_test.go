@@ -127,6 +127,21 @@ func TestResolveDistributedMode_InvalidTransport(t *testing.T) {
 	}
 }
 
+func TestResolveDistributedMode_SecondaryCollectiveListFromFlag(t *testing.T) {
+	clearDistEnv(t)
+	c := newServeTestCmd()
+	_ = c.Flags().Set("mode", "secondary")
+	_ = c.Flags().Set("primary", "p.local:1234")
+	_ = c.Flags().Set("collective", "alpha, beta ,alpha, ")
+	if err := resolveDistributedMode(c, nil); err != nil {
+		t.Fatalf("resolveDistributedMode err = %v", err)
+	}
+	_, cfg, _ := ResolvedDistributed()
+	if got := cfg.CollectiveMembership; len(got) != 2 || got[0] != "alpha" || got[1] != "beta" {
+		t.Errorf("CollectiveMembership = %v, want [alpha beta]", got)
+	}
+}
+
 func TestResolveDistributedMode_CollectiveFlagOnPrimaryBecomesDefault(t *testing.T) {
 	clearDistEnv(t)
 	c := newServeTestCmd()

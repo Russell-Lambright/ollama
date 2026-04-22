@@ -1911,7 +1911,10 @@ func resolveDistributedMode(cmd *cobra.Command, _ []string) error {
 	if collectiveFlag != "" {
 		switch mode {
 		case distributed.ModeSecondary:
-			cfg.CollectiveMembership = []string{collectiveFlag}
+			// Accept a comma-separated list for consistency with
+			// OLLAMA_COLLECTIVE so an operator can ask a Secondary to
+			// join multiple collectives via a single flag.
+			cfg.CollectiveMembership = splitAndTrimCollectives(collectiveFlag)
 		default:
 			cfg.DefaultCollective = collectiveFlag
 		}
@@ -1946,6 +1949,21 @@ func resolveDistributedMode(cmd *cobra.Command, _ []string) error {
 		)
 	}
 	return nil
+}
+
+// splitAndTrimCollectives parses a comma-separated collective list from a
+// CLI flag, matching the semantics of OLLAMA_COLLECTIVE. Empty entries are
+// dropped; whitespace is trimmed.
+func splitAndTrimCollectives(s string) []string {
+	parts := strings.Split(s, ",")
+	out := parts[:0]
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func initializeKeypair() error {

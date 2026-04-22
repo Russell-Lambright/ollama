@@ -304,6 +304,116 @@ func TestValidateRejectsBadTransport(t *testing.T) {
 	}
 }
 
+func TestIsSmallJob(t *testing.T) {
+	cases := map[string]struct {
+		threshold int
+		prompt    string
+		want      bool
+	}{
+		"short prompt is small":                {50, "hello world", true},
+		"exactly at threshold is not small":    {11, "hello world", false}, // 11 runes, threshold 11
+		"long prompt is not small":             {5, "hello world", false},
+		"threshold zero disables check":        {0, "", false},
+		"multibyte counted by rune":            {5, "héllo", false}, // 5 runes
+		"multibyte under threshold":            {10, "héllo", true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			c := Default()
+			c.SmallJob.PromptRuneThreshold = tc.threshold
+			if got := c.IsSmallJob(tc.prompt); got != tc.want {
+				t.Errorf("IsSmallJob(%q) with threshold %d = %v, want %v", tc.prompt, tc.threshold, got, tc.want)
+			}
+		})
+	}
+
+	// Nil receiver must not panic.
+	var cnil *DistributedConfig
+	if cnil.IsSmallJob("x") {
+		t.Error("nil receiver IsSmallJob must be false")
+	}
+}
+
+func TestSegmentsBelowFallback(t *testing.T) {
+	c := Default()
+	c.SmallJob.MinSegments = 2
+	if !c.SegmentsBelowFallback(1) {
+		t.Error("1 segment should be below fallback when min=2")
+	}
+	if c.SegmentsBelowFallback(2) {
+		t.Error("2 segments should not be below fallback when min=2")
+	}
+	c.SmallJob.MinSegments = 0
+	if c.SegmentsBelowFallback(0) {
+		t.Error("zero min disables check; 0 should not be below fallback")
+	}
+}
+
+func TestDefaultPromptExpanderDisabled(t *testing.T) {
+	c := Default()
+	if c.PromptExpander.Enabled {
+		t.Error("PromptExpander should be disabled by default")
+	}
+	if c.PromptExpander.MaxExpansionRatio <= 0 {
+		t.Error("MaxExpansionRatio must have a positive default")
+	}
+}
+
+func TestLoadPromptExpanderYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "distributed.yaml")
+	content := `
+prompt_expander:
+  enabled: true
+  model: my-expander
+  max_expansion_ratio: 1.5
+small_job:
+  prompt_rune_threshold: 100
+  min_segments: 3
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.PromptExpander.Enabled {
+		t.Error("PromptExpander.Enabled should be true")
+	}
+	if cfg.PromptExpander.Model != "my-expander" {
+		t.Errorf("PromptExpander.Model = %q", cfg.PromptExpander.Model)
+	}
+	if cfg.PromptExpander.MaxExpansionRatio != 1.5 {
+		t.Errorf("MaxExpansionRatio = %v, want 1.5", cfg.PromptExpander.MaxExpansionRatio)
+	}
+	if cfg.SmallJob.PromptRuneThreshold != 100 {
+		t.Errorf("PromptRuneThreshold = %d", cfg.SmallJob.PromptRuneThreshold)
+	}
+	if cfg.SmallJob.MinSegments != 3 {
+		t.Errorf("MinSegments = %d", cfg.SmallJob.MinSegments)
+	}
+}
+
+func TestNormalizeFixesNegatives(t *testing.T) {
+	c := Default()
+	c.SmallJob.PromptRuneThreshold = -10
+	c.SmallJob.MinSegments = -1
+	c.PromptExpander.MaxExpansionRatio = 0
+	if err := c.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if c.SmallJob.PromptRuneThreshold != 0 {
+		t.Error("negative threshold should normalize to 0")
+	}
+	if c.SmallJob.MinSegments != 0 {
+		t.Error("negative min segments should normalize to 0")
+	}
+	if c.PromptExpander.MaxExpansionRatio <= 0 {
+		t.Error("MaxExpansionRatio should be reset to a positive default")
+	}
+}
+
 func TestDefaultPathFallsBackToHome(t *testing.T) {
 	t.Setenv("OLLAMA_DISTRIBUTED_CONFIG", "")
 	got, err := DefaultPath()

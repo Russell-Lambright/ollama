@@ -43,6 +43,13 @@ const (
 	DefaultTopK          = 40
 	DefaultNumCtx        = 8192
 	DefaultRepeatPenalty = 1.1
+
+	// Small-job fallback thresholds. A prompt below either of these is run
+	// on a single node (standalone-equivalent path) instead of going
+	// through the SPPR → orchestrator → fan-out pipeline. Both bounds are
+	// configurable; zero disables that particular check.
+	DefaultSmallJobPromptRuneThreshold = 400 // ~characters; rough proxy for "short prompt"
+	DefaultSmallJobMinSegments         = 2   // < this many SPPR segments → single node
 )
 
 // Transport selects the wire protocol used between Primary and Secondary
@@ -156,6 +163,84 @@ type DistributedConfig struct {
 	// "grpc" (default), "http2-sse". Overridable via --transport and
 	// OLLAMA_TRANSPORT.
 	Transport Transport `yaml:"transport"`
+
+	// PromptExpander configures the optional pre-SPPR stage that rewrites
+	// an incoming prompt into a more verbose but semantically equivalent
+	// form so SPPR has more surface area to segment on. Disabled by
+	// default — enable only after measuring that it improves segmentation
+	// quality for your workload.
+	PromptExpander PromptExpanderConfig `yaml:"prompt_expander"`
+
+	// SmallJob controls the fallback path: jobs whose prompt is short or
+	// whose SPPR output is trivial bypass the distributed pipeline and run
+	// on a single node (standalone-equivalent).
+	SmallJob SmallJobConfig `yaml:"small_job"`
+}
+
+// PromptExpanderConfig configures the optional Prompt Expander stage that
+// precedes SPPR. When Enabled is true, the framework runs the expander
+// before SPPR; when false, prompts flow directly into SPPR unchanged.
+//
+// The expander's contract is strict: it may add verbosity, restate,
+// enumerate, or rephrase, but it MUST NOT alter the user's meaning,
+// introduce new facts, or remove information. A downstream guard (Phase 4)
+// compares expander output against the original prompt and falls back to
+// the original on any meaning-drift signal.
+type PromptExpanderConfig struct {
+	// Enabled turns the stage on. Default false.
+	Enabled bool `yaml:"enabled"`
+	// Model is the model used to perform the expansion. Empty means
+	// "reuse the SPPR model" so operators don't have to configure two.
+	Model string `yaml:"model"`
+	// MaxExpansionRatio caps how much the expander may grow the prompt
+	// (expanded_len / original_len). Anything above this ratio is
+	// discarded and the original prompt is used instead. Default 3.0.
+	MaxExpansionRatio float64 `yaml:"max_expansion_ratio"`
+}
+
+// SmallJobConfig controls the threshold below which a job skips the
+// distributed pipeline and is executed on a single node. This is a
+// graceful-degradation path, not an error.
+type SmallJobConfig struct {
+	// PromptRuneThreshold: if the raw prompt has fewer runes than this,
+	// the job falls back to single-node mode before even invoking SPPR.
+	// Set to 0 to disable this check. Default: DefaultSmallJobPromptRuneThreshold.
+	PromptRuneThreshold int `yaml:"prompt_rune_threshold"`
+	// MinSegments: if SPPR emits fewer segments than this, the job falls
+	// back to single-node execution (the distribution overhead is not
+	// worth it). Set to 0 to disable. Default: DefaultSmallJobMinSegments.
+	MinSegments int `yaml:"min_segments"`
+}
+
+// IsSmallJob reports whether a raw prompt is small enough to bypass the
+// distributed pipeline up-front, before SPPR has run. The SPPR-output
+// segment count check is applied separately by the orchestrator (Phase 5).
+func (c *DistributedConfig) IsSmallJob(prompt string) bool {
+	if c == nil {
+		return false
+	}
+	if c.SmallJob.PromptRuneThreshold <= 0 {
+		return false
+	}
+	// Use rune count (not byte count) so multi-byte languages are handled
+	// correctly.
+	n := 0
+	for range prompt {
+		n++
+		if n >= c.SmallJob.PromptRuneThreshold {
+			return false
+		}
+	}
+	return true
+}
+
+// SegmentsBelowFallback reports whether a SPPR output of the given segment
+// count should trigger single-node fallback. Used by the orchestrator.
+func (c *DistributedConfig) SegmentsBelowFallback(segmentCount int) bool {
+	if c == nil || c.SmallJob.MinSegments <= 0 {
+		return false
+	}
+	return segmentCount < c.SmallJob.MinSegments
 }
 
 // Default returns a DistributedConfig populated with safe defaults tuned for
@@ -173,6 +258,15 @@ func Default() DistributedConfig {
 		SPPRModel:       DefaultSPPRModel,
 		StarvationIndex: DefaultStarvationIndex,
 		Transport:       DefaultTransport,
+		PromptExpander: PromptExpanderConfig{
+			Enabled:           false,
+			Model:             "", // empty means "reuse SPPRModel"
+			MaxExpansionRatio: 3.0,
+		},
+		SmallJob: SmallJobConfig{
+			PromptRuneThreshold: DefaultSmallJobPromptRuneThreshold,
+			MinSegments:         DefaultSmallJobMinSegments,
+		},
 	}
 }
 
@@ -272,6 +366,15 @@ func (c *DistributedConfig) Normalize() error {
 	if c.Transport == "" {
 		c.Transport = DefaultTransport
 	}
+	if c.PromptExpander.MaxExpansionRatio <= 0 {
+		c.PromptExpander.MaxExpansionRatio = 3.0
+	}
+	if c.SmallJob.PromptRuneThreshold < 0 {
+		c.SmallJob.PromptRuneThreshold = 0 // treat negatives as "disabled"
+	}
+	if c.SmallJob.MinSegments < 0 {
+		c.SmallJob.MinSegments = 0
+	}
 	// Fine-tuning: zero means "engine default" — leave alone so downstream
 	// consumers can distinguish unset from set-to-zero using IsZero-style
 	// helpers in later phases. Here we only backfill sensible defaults when
@@ -341,6 +444,9 @@ func dedupeStrings(in []string) []string {
 	seen := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))
 	for _, s := range in {
+		if s == "" {
+			continue
+		}
 		if _, ok := seen[s]; ok {
 			continue
 		}
