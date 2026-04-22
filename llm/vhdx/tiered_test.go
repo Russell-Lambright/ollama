@@ -74,10 +74,10 @@ func TestTieredLRUEviction(t *testing.T) {
 	tr.HotCapacity = 2
 	defer tr.Close()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		mustStore(t, cold, Layer{Index: i, Size: 1, Data: []byte{byte(i)}})
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if _, err := tr.Load(context.Background(), i); err != nil {
 			t.Fatalf("Load %d: %v", i, err)
 		}
