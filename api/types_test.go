@@ -910,3 +910,22 @@ func TestToolPropertiesMap_NestedProperties(t *testing.T) {
 		assert.Equal(t, expected, string(data))
 	})
 }
+
+func TestProcessModelResponseSizeVHDX(t *testing.T) {
+	// Zero SizeVHDX should be omitted from JSON to preserve compatibility
+	// with existing consumers that do not know about the field.
+	zero := ProcessModelResponse{Name: "m", Model: "m", Size: 1}
+	b, err := json.Marshal(zero)
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "size_vhdx")
+
+	// Non-zero value must round-trip.
+	with := ProcessModelResponse{Name: "m", Model: "m", Size: 1, SizeVHDX: 42}
+	b, err = json.Marshal(with)
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"size_vhdx":42`)
+
+	var back ProcessModelResponse
+	require.NoError(t, json.Unmarshal(b, &back))
+	assert.Equal(t, int64(42), back.SizeVHDX)
+}

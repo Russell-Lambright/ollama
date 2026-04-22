@@ -2069,6 +2069,7 @@ func (s *Server) PsHandler(c *gin.Context) {
 			total, vram := v.llama.MemorySize()
 			mr.Size = int64(total)
 			mr.SizeVRAM = int64(vram)
+			mr.SizeVHDX = int64(v.llama.VHDXSize())
 		}
 		// The scheduler waits to set expiresAt, so if a model is loading it's
 		// possible that it will be set to the unix epoch. For those cases, just

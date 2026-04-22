@@ -993,6 +993,12 @@ func ListRunningHandler(cmd *cobra.Command, args []string) error {
 				cpuPercent := math.Round(float64(sizeCPU) / float64(m.Size) * 100)
 				procStr = fmt.Sprintf("%d%%/%d%% CPU/GPU", int(cpuPercent), int(100-cpuPercent))
 			}
+			// When VHDX offloading is active, append the offloaded share
+			// to keep visibility on "layers loaded from VHDX vs RAM".
+			if m.SizeVHDX > 0 && m.Size > 0 {
+				vhdxPercent := math.Round(float64(m.SizeVHDX) / float64(m.Size) * 100)
+				procStr += fmt.Sprintf(" +%d%% VHDX", int(vhdxPercent))
+			}
 
 			var until string
 			delta := time.Since(m.ExpiresAt)

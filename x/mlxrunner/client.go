@@ -521,6 +521,10 @@ func (c *Client) VRAMByGPU(id ml.DeviceID) uint64 {
 	return c.currentMemory()
 }
 
+// VHDXSize implements llm.LlamaServer. The MLX runner does not use VHDX
+// offloading so this is always zero.
+func (c *Client) VHDXSize() uint64 { return 0 }
+
 var _ llm.LlamaServer = (*Client)(nil)
 
 // setEnv sets or replaces an environment variable in cmd.Env.

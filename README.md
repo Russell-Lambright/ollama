@@ -142,12 +142,32 @@ console.log(response.message.content);
 
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) project founded by Georgi Gerganov.
 
+## VHDX virtual disk memory offloading (Windows)
+
+Windows hosts can offload model layers to a VHDX virtual hard drive
+when VRAM and system RAM are insufficient for very large models, with a
+bounded in-memory cache for hot layers and asynchronous prefetching for
+cold ones. Enable it by pointing Ollama at a directory backed by a VHDX:
+
+```powershell
+$env:OLLAMA_VHDX_OFFLOAD_PATH = 'V:\ollama-offload'
+ollama serve
+```
+
+When offloading is active, `ollama ps` shows the VHDX share of the
+model (`25%/50% CPU/GPU +25% VHDX`) and `/api/ps` reports a new
+`size_vhdx` field. Default builds are unchanged when the variable is
+unset. See [`docs/vhdx-offloading.md`](./docs/vhdx-offloading.md) for
+the full guide (hardware guidance, provisioning, `StorageProvider`
+abstraction, the experimental CGO bridge, and troubleshooting).
+
 ## Documentation
 
 - [CLI reference](https://docs.ollama.com/cli)
 - [REST API reference](https://docs.ollama.com/api)
 - [Importing models](https://docs.ollama.com/import)
 - [Modelfile reference](https://docs.ollama.com/modelfile)
+- [VHDX memory offloading (Windows)](./docs/vhdx-offloading.md)
 - [Building from source](https://github.com/ollama/ollama/blob/main/docs/development.md)
 
 ## Community Integrations

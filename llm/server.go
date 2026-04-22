@@ -76,6 +76,12 @@ type LlamaServer interface {
 	Close() error
 	MemorySize() (total, vram uint64)
 	VRAMByGPU(id ml.DeviceID) uint64
+	// VHDXSize reports the number of bytes offloaded to a VHDX virtual
+	// disk, or zero if VHDX offloading is not in use for this runner.
+	// The default [llmServer] implementation returns zero; runners that
+	// attach a [github.com/ollama/ollama/llm/vhdx.Tiered] provider can
+	// override this to surface the real number in "ollama ps".
+	VHDXSize() uint64
 	Pid() int
 	GetPort() int
 	GetDeviceInfos(ctx context.Context) []ml.DeviceInfo
@@ -1906,6 +1912,14 @@ func (s *llmServer) VRAMByGPU(id ml.DeviceID) uint64 {
 
 func (s *llmServer) ContextLength() int {
 	return s.options.NumCtx
+}
+
+// VHDXSize returns the number of bytes that have been offloaded from
+// system memory onto a VHDX virtual disk. The default [llmServer]
+// implementation does not attach a VHDX provider and so always returns
+// zero, preserving the pre-enhancement "ollama ps" output.
+func (s *llmServer) VHDXSize() uint64 {
+	return 0
 }
 
 func (s *ollamaServer) GetDeviceInfos(ctx context.Context) []ml.DeviceInfo {
