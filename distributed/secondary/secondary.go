@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -106,6 +107,7 @@ type Options struct {
 type Secondary struct {
 	opts    Options
 	machine *state.Machine
+	log     *slog.Logger
 
 	mu       sync.Mutex
 	running  bool
@@ -141,6 +143,7 @@ func New(opts Options) (*Secondary, error) {
 	return &Secondary{
 		opts:     opts,
 		machine:  m,
+		log:      slog.With("component", "distributed/secondary", "node", string(opts.Identity.ID)),
 		jobs:     make(map[string]context.CancelFunc),
 		personaQ: make(chan string, 4),
 	}, nil
@@ -164,30 +167,37 @@ func (s *Secondary) Run(ctx context.Context) error {
 	}
 	s.running = true
 	s.mu.Unlock()
+	s.log.Info("secondary: starting", "hostname", s.opts.Identity.Hostname, "collective", s.opts.Identity.Collective, "advertised_lpu", s.opts.Identity.AdvertisedLPU)
 
 	// Wire the state listener BEFORE registration so the very first
 	// Syncing→Available transition is visible to the Primary.
 	removeListener := s.machine.AddListener(func(from, to state.State) {
+		s.log.Info("secondary: state transition", "from", from, "to", to)
 		// Best-effort: a state-update delivery failure is not fatal; the
 		// next heartbeat will reconcile.
-		_ = s.opts.Primary.ReportStateUpdate(ctx, transport.StateUpdate{
+		if err := s.opts.Primary.ReportStateUpdate(ctx, transport.StateUpdate{
 			NodeID: s.opts.Identity.ID,
 			From:   from,
 			To:     to,
-		})
+		}); err != nil {
+			s.log.Debug("secondary: state-update delivery failed (will reconcile via heartbeat)", "from", from, "to", to, "err", err)
+		}
 	})
 	defer removeListener()
 
 	// 1) Register.
+	s.log.Debug("secondary: registering with primary")
 	resp, err := s.opts.Primary.Register(ctx, transport.RegisterRequest{
 		Identity: s.opts.Identity,
 	})
 	if err != nil {
 		_ = s.machine.Transition(state.Failed)
+		s.log.Error("secondary: register failed", "err", err)
 		return fmt.Errorf("secondary: register: %w", err)
 	}
 	if !resp.Accepted {
 		_ = s.machine.Transition(state.Failed)
+		s.log.Error("secondary: register rejected", "reason", resp.Reason)
 		return fmt.Errorf("secondary: register rejected: %s", resp.Reason)
 	}
 	s.hbEvery = resp.HeartbeatInterval
@@ -197,15 +207,20 @@ func (s *Secondary) Run(ctx context.Context) error {
 	if s.hbEvery <= 0 {
 		s.hbEvery = transport.DefaultHeartbeatInterval
 	}
+	s.log.Info("secondary: registered", "heartbeat_interval", s.hbEvery)
 
 	// 2) Sync models. Sync failure → Failed + return.
 	if s.opts.Syncer != nil {
+		s.log.Info("secondary: model sync starting")
 		if err := s.opts.Syncer.Sync(ctx); err != nil {
 			_ = s.machine.Transition(state.Failed)
+			s.log.Error("secondary: model sync failed", "err", err)
 			return fmt.Errorf("secondary: sync: %w", err)
 		}
+		s.log.Info("secondary: model sync complete")
 	}
 	if err := s.machine.Transition(state.Available); err != nil {
+		s.log.Error("secondary: entering Available failed", "err", err)
 		return fmt.Errorf("secondary: enter Available: %w", err)
 	}
 
@@ -213,8 +228,10 @@ func (s *Secondary) Run(ctx context.Context) error {
 	assignCh, err := s.opts.Primary.SubscribeAssignments(ctx, s.opts.Identity.ID)
 	if err != nil {
 		_ = s.machine.Transition(state.Failed)
+		s.log.Error("secondary: subscribe to assignments failed", "err", err)
 		return fmt.Errorf("secondary: subscribe: %w", err)
 	}
+	s.log.Debug("secondary: subscribed to assignments", "max_concurrent", s.opts.MaxConcurrentSegments)
 
 	// runCtx is cancelled when the consume loop exits so auxiliary
 	// goroutines (heartbeat) tear down even if the caller's ctx is
@@ -242,6 +259,7 @@ func (s *Secondary) Run(ctx context.Context) error {
 		if s.machine.State() != state.Failed {
 			_ = s.machine.Transition(state.Failed)
 		}
+		s.log.Error("secondary: exiting with error", "err", loopErr)
 		return loopErr
 	}
 	// Graceful shutdown path: only emit Offline if we're currently in a
@@ -249,6 +267,7 @@ func (s *Secondary) Run(ctx context.Context) error {
 	if cur := s.machine.State(); cur == state.Available || cur == state.Syncing {
 		_ = s.machine.Transition(state.Offline)
 	}
+	s.log.Info("secondary: stopped", "final_state", s.machine.State())
 	return ctx.Err()
 }
 
@@ -275,7 +294,10 @@ func (s *Secondary) Cancel(ctx context.Context, req transport.CancelRequest) err
 	}
 	s.mu.Unlock()
 	if ok {
+		s.log.Info("secondary: cancel received", "job", req.JobID, "segment", req.SegmentID, "reason", string(req.Reason))
 		cancelFn()
+	} else {
+		s.log.Debug("secondary: cancel for unknown segment (idempotent)", "segment", req.SegmentID)
 	}
 	return nil
 }
@@ -287,6 +309,7 @@ func (s *Secondary) heartbeatLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.log.Debug("secondary: heartbeat loop stopped")
 			return
 		case <-t.C:
 			hb := transport.Heartbeat{
@@ -295,7 +318,9 @@ func (s *Secondary) heartbeatLoop(ctx context.Context) {
 				CurrentLPU: s.opts.Identity.AdvertisedLPU,
 				JobIDs:     s.activeJobIDs(),
 			}
-			_ = s.opts.Primary.Heartbeat(ctx, hb)
+			if err := s.opts.Primary.Heartbeat(ctx, hb); err != nil {
+				s.log.Debug("secondary: heartbeat delivery failed", "err", err)
+			}
 		}
 	}
 }
@@ -363,7 +388,10 @@ func (s *Secondary) consumeLoop(ctx context.Context, assignCh <-chan transport.A
 // do NOT take the node Failed (the spec reserves Failed for node-level
 // faults such as sync failure).
 func (s *Secondary) runSegment(parent context.Context, a transport.AssignSegment) {
+	s.log.Info("secondary: segment starting", "job", a.JobID, "segment", a.SegmentID, "model", a.Model, "prompt_len", len(a.Prompt))
+	start := time.Now()
 	if err := s.machine.Transition(state.Processing); err != nil {
+		s.log.Warn("secondary: cannot transition to Processing", "err", err)
 		_ = s.opts.Primary.SendSegmentEvent(parent, transport.SegmentEvent{
 			JobID:     a.JobID,
 			SegmentID: a.SegmentID,
@@ -372,11 +400,13 @@ func (s *Secondary) runSegment(parent context.Context, a transport.AssignSegment
 		})
 		return
 	}
+	var eventCount int
 	defer func() {
 		// Return to Available regardless of outcome.
 		if cur := s.machine.State(); cur == state.Processing {
 			_ = s.machine.Transition(state.Available)
 		}
+		s.log.Info("secondary: segment finished", "job", a.JobID, "segment", a.SegmentID, "events", eventCount, "duration", time.Since(start))
 	}()
 
 	segCtx, cancelFn := context.WithCancel(parent)
@@ -392,6 +422,7 @@ func (s *Secondary) runSegment(parent context.Context, a transport.AssignSegment
 
 	events, err := s.opts.Executor.Execute(segCtx, a)
 	if err != nil {
+		s.log.Error("secondary: executor failed", "job", a.JobID, "segment", a.SegmentID, "err", err)
 		_ = s.opts.Primary.SendSegmentEvent(parent, transport.SegmentEvent{
 			JobID:     a.JobID,
 			SegmentID: a.SegmentID,
@@ -409,23 +440,28 @@ func (s *Secondary) runSegment(parent context.Context, a transport.AssignSegment
 		if ev.SegmentID == "" {
 			ev.SegmentID = a.SegmentID
 		}
+		eventCount++
 		if err := s.opts.Primary.SendSegmentEvent(parent, ev); err != nil {
 			// Transport failure mid-stream: abandon the rest; the
 			// orchestrator will notice via its own bookkeeping.
+			s.log.Warn("secondary: event delivery failed; abandoning segment", "job", a.JobID, "segment", a.SegmentID, "err", err)
 			return
 		}
 	}
 }
 
 func (s *Secondary) applyPersona(ctx context.Context, persona string) error {
+	s.log.Info("secondary: applying persona", "persona", persona)
 	if err := s.machine.Transition(state.Training); err != nil {
 		// If we're not Available (e.g. mid-segment), drop the request;
 		// the orchestrator may retry. Not a fatal error.
+		s.log.Warn("secondary: cannot enter Training; persona request dropped", "err", err)
 		return nil
 	}
 	if s.opts.PersonaApplier != nil {
 		if err := s.opts.PersonaApplier.Apply(ctx, persona); err != nil {
 			_ = s.machine.Transition(state.Failed)
+			s.log.Error("secondary: persona applier failed", "persona", persona, "err", err)
 			return fmt.Errorf("secondary: apply persona: %w", err)
 		}
 	}
@@ -433,6 +469,7 @@ func (s *Secondary) applyPersona(ctx context.Context, persona string) error {
 	if err := s.machine.Transition(state.Available); err != nil {
 		return fmt.Errorf("secondary: leave Training: %w", err)
 	}
+	s.log.Info("secondary: persona applied", "persona", persona)
 	return nil
 }
 

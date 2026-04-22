@@ -11,6 +11,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 )
 
@@ -209,6 +210,7 @@ func (m *Machine) Transition(to State) error {
 	from := m.current
 	if !CanTransition(from, to) {
 		m.mu.Unlock()
+		slog.Warn("distributed/state: invalid transition rejected", "from", from, "to", to)
 		return &InvalidTransitionError{From: from, To: to}
 	}
 	if from == to {
@@ -221,6 +223,7 @@ func (m *Machine) Transition(to State) error {
 		snapshot = append(snapshot, l)
 	}
 	m.mu.Unlock()
+	slog.Debug("distributed/state: transition", "from", from, "to", to, "listeners", len(snapshot))
 	for _, l := range snapshot {
 		l(from, to)
 	}

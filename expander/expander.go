@@ -21,6 +21,7 @@ package expander
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"unicode"
 )
@@ -130,19 +131,24 @@ func (e *ModelExpander) Expand(ctx context.Context, prompt string) (string, erro
 		// Nothing to expand. Return as-is; this is not an error.
 		return prompt, nil
 	}
+	slog.Debug("expander: expanding prompt", "model", e.model, "prompt_len", len(prompt))
 	out, err := e.client.Generate(ctx, e.model, systemPreamble+prompt, e.options)
 	if err != nil {
+		slog.Warn("expander: model error; returning original", "model", e.model, "err", err)
 		// Transport/model error is surfaced so the pipeline can decide
 		// whether to retry or skip the expander stage.
 		return prompt, err
 	}
 	out = strings.TrimSpace(out)
 	if out == "" {
+		slog.Debug("expander: empty output; returning original")
 		return prompt, nil
 	}
-	if ok, _ := Guard(prompt, out, e.maxExpansionRatio, e.keywordFloor); !ok {
+	if ok, reason := Guard(prompt, out, e.maxExpansionRatio, e.keywordFloor); !ok {
+		slog.Info("expander: guard rejected expansion; returning original", "reason", reason, "original_len", len(prompt), "expanded_len", len(out))
 		return prompt, nil
 	}
+	slog.Debug("expander: expansion accepted", "original_len", len(prompt), "expanded_len", len(out))
 	return out, nil
 }
 

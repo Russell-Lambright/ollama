@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"unicode"
 
@@ -126,8 +127,10 @@ func (r *ModelRenderer) Render(ctx context.Context, prompt string) ([]Segment, e
 	if strings.TrimSpace(prompt) == "" {
 		return nil, errors.New("sppr: empty prompt")
 	}
+	slog.Debug("sppr: rendering", "model", r.model, "prompt_len", len(prompt))
 	out, err := r.client.Generate(ctx, r.model, systemPreamble+prompt, r.options)
 	if err != nil {
+		slog.Warn("sppr: renderer model error; falling back to single segment", "model", r.model, "err", err)
 		// Transport/model error surfaces as a single-segment fallback
 		// with the error attached as a hint, so the orchestrator can
 		// decide whether the upstream is healthy enough to dispatch.
@@ -135,8 +138,10 @@ func (r *ModelRenderer) Render(ctx context.Context, prompt string) ([]Segment, e
 	}
 	segs, ok := parseSegments(prompt, out)
 	if !ok || len(segs) == 0 {
+		slog.Info("sppr: unparseable output; falling back to single segment", "raw_len", len(out))
 		return []Segment{fallbackSegment(prompt, "fallback_reason", "unparseable_sppr_output")}, nil
 	}
+	slog.Debug("sppr: rendered", "segments", len(segs))
 	return segs, nil
 }
 
@@ -256,6 +261,7 @@ func Run(ctx context.Context, prompt string, opts PlanOptions) (Plan, error) {
 		return Plan{}, errors.New("sppr: Cfg is required")
 	}
 	if opts.Cfg.IsSmallJob(prompt) {
+		slog.Info("sppr: small-job gate fired; single-node fallback", "prompt_len", len(prompt), "threshold", opts.Cfg.SmallJob.PromptRuneThreshold)
 		return Plan{
 			Segments:       []Segment{fallbackSegment(prompt, "fallback_reason", "small_job_prompt")},
 			SingleNode:     true,
@@ -273,19 +279,25 @@ func Run(ctx context.Context, prompt string, opts PlanOptions) (Plan, error) {
 		// the error here (observable via ExpandedPrompt being empty)
 		// but surface a hint on the returned plan.
 		out, err := opts.Expander.Expand(ctx, prompt)
-		if err == nil && out != "" && out != prompt {
+		if err != nil {
+			slog.Warn("sppr: expander error; continuing with original prompt", "err", err)
+		} else if out != "" && out != prompt {
 			work = out
 			expanded = out
 		}
 	}
 	segs, err := opts.Renderer.Render(ctx, work)
 	if err != nil {
+		slog.Error("sppr: renderer error propagating to caller", "err", err)
 		return Plan{}, err
 	}
 	plan := Plan{Segments: segs, ExpandedPrompt: expanded}
 	if opts.Cfg.SegmentsBelowFallback(len(segs)) {
 		plan.SingleNode = true
 		plan.FallbackReason = "segments_below_threshold"
+		slog.Info("sppr: below-threshold fallback", "segments", len(segs), "min_segments", opts.Cfg.SmallJob.MinSegments)
+	} else {
+		slog.Debug("sppr: plan ready", "segments", len(segs), "expander_used", expanded != "")
 	}
 	return plan, nil
 }
