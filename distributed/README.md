@@ -42,9 +42,9 @@ This initiative ships in eight sequential PRs. Every PR must:
 | 2     | Node identity, state machine, transport                 | ✅ landed |
 | 3     | Secondary mode runtime                                  | ✅ landed |
 | 4     | SPPR pipeline stage                                     | ✅ landed |
-| 5a    | Orchestrator scheduler + starvation monitor             | ⏳        |
-| 5b    | Execution, correlation, QA coherence pass               | ⏳        |
-| 6     | Model synchronization                                   | ⏳        |
+| 5a    | Orchestrator scheduler + starvation monitor             | 🚧 in progress |
+| 5b    | Execution, correlation, QA coherence pass               | 🚧 in progress |
+| 6     | Model synchronization                                   | 🚧 in progress |
 | 7     | Distributed Dashboard UI                                | ⏳        |
 | 8     | Integration tests & coverage gate (≥ 90 % on new code)  | ⏳        |
 
