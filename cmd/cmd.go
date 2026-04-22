@@ -41,6 +41,8 @@ import (
 	"github.com/ollama/ollama/cmd/config"
 	"github.com/ollama/ollama/cmd/launch"
 	"github.com/ollama/ollama/cmd/tui"
+	"github.com/ollama/ollama/distributed"
+	distconfig "github.com/ollama/ollama/distributed/config"
 	"github.com/ollama/ollama/envconfig"
 	"github.com/ollama/ollama/format"
 	"github.com/ollama/ollama/internal/modelref"
@@ -1837,6 +1839,115 @@ func RunServer(_ *cobra.Command, _ []string) error {
 	return err
 }
 
+// resolvedDistributed holds the distributed configuration selected for this
+// process. In standalone mode (the default) its Mode is ModeStandalone and
+// nothing in the distributed/ tree is consulted at runtime.
+var resolvedDistributed struct {
+	Mode    distributed.Mode
+	Config  distconfig.DistributedConfig
+	Persona string
+}
+
+// ResolvedDistributed returns the resolved distributed mode and config.
+// Later phases (transport, orchestrator, secondary runtime) read from this
+// after serve's PreRunE has executed.
+func ResolvedDistributed() (distributed.Mode, distconfig.DistributedConfig, string) {
+	return resolvedDistributed.Mode, resolvedDistributed.Config, resolvedDistributed.Persona
+}
+
+// resolveDistributedMode is the PreRunE for `ollama serve`. It enforces the
+// argument-over-config precedence defined in the spec:
+//
+//	CLI flag > OLLAMA_* env var > ~/.ollama/distributed.yaml > built-in default
+//
+// In the default case (no --mode, no OLLAMA_NODE_MODE) it is a near-no-op:
+// it loads the config file (if any) purely so the values are available to
+// downstream phases, but leaves Mode=Standalone so serve behaves exactly as
+// before.
+func resolveDistributedMode(cmd *cobra.Command, _ []string) error {
+	modeFlag, _ := cmd.Flags().GetString("mode")
+	primaryFlag, _ := cmd.Flags().GetString("primary")
+	collectiveFlag, _ := cmd.Flags().GetString("collective")
+	personaFlag, _ := cmd.Flags().GetString("persona")
+	transportFlag, _ := cmd.Flags().GetString("transport")
+
+	// Mode: flag wins, then env, then default.
+	raw := strings.TrimSpace(modeFlag)
+	if raw == "" {
+		raw = strings.TrimSpace(envconfig.NodeMode())
+	}
+	mode, err := distributed.ParseMode(raw)
+	if err != nil {
+		return err
+	}
+
+	path, err := distconfig.DefaultPath()
+	if err != nil {
+		// Not fatal in standalone mode — fall back to pure defaults.
+		if mode == distributed.ModeStandalone {
+			resolvedDistributed.Mode = distributed.ModeStandalone
+			resolvedDistributed.Config = distconfig.Default()
+			return nil
+		}
+		return err
+	}
+
+	cfg, err := distconfig.Load(path)
+	if err != nil {
+		return err
+	}
+
+	// CLI flags override anything the file or env produced.
+	if primaryFlag != "" {
+		cfg.PrimaryHost = primaryFlag
+	}
+	if transportFlag != "" {
+		t, err := distconfig.ParseTransport(transportFlag)
+		if err != nil {
+			return err
+		}
+		cfg.Transport = t
+	}
+	if collectiveFlag != "" {
+		switch mode {
+		case distributed.ModeSecondary:
+			cfg.CollectiveMembership = []string{collectiveFlag}
+		default:
+			cfg.DefaultCollective = collectiveFlag
+		}
+	}
+	if err := cfg.Normalize(); err != nil {
+		return err
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+
+	// Per-mode invariants.
+	if mode == distributed.ModeSecondary && strings.TrimSpace(cfg.PrimaryHost) == "" {
+		return errors.New("secondary mode requires --primary or OLLAMA_PRIMARY_HOST or primary_host in distributed.yaml")
+	}
+
+	resolvedDistributed.Mode = mode
+	resolvedDistributed.Config = cfg
+	resolvedDistributed.Persona = strings.TrimSpace(personaFlag)
+
+	if mode != distributed.ModeStandalone {
+		slog.Info("distributed mode resolved",
+			"mode", mode,
+			"primary_host", cfg.PrimaryHost,
+			"default_collective", cfg.DefaultCollective,
+			"collective_membership", cfg.CollectiveMembership,
+			"max_nodes_per_collective", cfg.MaxNodesPerCollective,
+			"starvation_index", cfg.StarvationIndex,
+			"sppr_model", cfg.SPPRModel,
+			"transport", cfg.Transport,
+			"persona", resolvedDistributed.Persona,
+		)
+	}
+	return nil
+}
+
 func initializeKeypair() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -2233,8 +2344,15 @@ func NewCLI() *cobra.Command {
 		Aliases: []string{"start"},
 		Short:   "Start Ollama",
 		Args:    cobra.ExactArgs(0),
+		PreRunE: resolveDistributedMode,
 		RunE:    RunServer,
 	}
+
+	serveCmd.Flags().String("mode", "", "Distributed mode: standalone (default), primary, or secondary")
+	serveCmd.Flags().String("primary", "", "host:port of the Primary node (secondary mode only; overrides OLLAMA_PRIMARY_HOST and distributed.yaml)")
+	serveCmd.Flags().String("collective", "", "Collective to join (secondary) or default collective (primary); overrides config")
+	serveCmd.Flags().String("persona", "", "Initial persona name requested at startup (secondary mode only)")
+	serveCmd.Flags().String("transport", "", "Primary↔Secondary transport: grpc (default) or http2-sse; overrides OLLAMA_TRANSPORT and distributed.yaml")
 
 	pullCmd := &cobra.Command{
 		Use:     "pull MODEL",

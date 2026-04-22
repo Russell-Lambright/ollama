@@ -238,6 +238,35 @@ var (
 	NoCloudEnv = Bool("OLLAMA_NO_CLOUD")
 )
 
+// Distributed-framework environment variables. These are informational in
+// Phase 1; they are surfaced through AsMap so that `ollama serve --help`
+// documents them consistently. Actual consumption lives in
+// github.com/ollama/ollama/distributed and its subpackages.
+var (
+	// NodeMode selects the operational mode: "standalone" (default),
+	// "primary", or "secondary". Empty or unrecognized values are treated
+	// as "standalone".
+	NodeMode = String("OLLAMA_NODE_MODE")
+	// PrimaryHost is the host:port a Secondary node attaches to when no
+	// --primary CLI flag is supplied.
+	PrimaryHost = String("OLLAMA_PRIMARY_HOST")
+	// Collective is the comma-separated list of collectives a Secondary
+	// node requests at startup. Overridden by --collective.
+	Collective = String("OLLAMA_COLLECTIVE")
+	// DefaultCollective, when set on a Primary, forces prompts without an
+	// explicit collective to use this one.
+	DefaultCollective = String("OLLAMA_DEFAULT_COLLECTIVE")
+	// SPPRModel overrides the linguistics-trained model used by the SPPR
+	// pipeline stage. Primarily useful in tests.
+	SPPRModel = String("OLLAMA_SPPR_MODEL")
+	// DistributedConfigPath overrides the default on-disk config location
+	// (~/.ollama/distributed.yaml).
+	DistributedConfigPath = String("OLLAMA_DISTRIBUTED_CONFIG")
+	// TransportProtocol selects the Primary↔Secondary wire protocol:
+	// "grpc" (default) or "http2-sse". Overridden by --transport.
+	TransportProtocol = String("OLLAMA_TRANSPORT")
+)
+
 func String(s string) func() string {
 	return func() string {
 		return Var(s)
@@ -327,6 +356,15 @@ func AsMap() map[string]EnvVar {
 		"OLLAMA_EDITOR":             {"OLLAMA_EDITOR", Editor(), "Path to editor for interactive prompt editing (Ctrl+G)"},
 		"OLLAMA_NEW_ENGINE":         {"OLLAMA_NEW_ENGINE", NewEngine(), "Enable the new Ollama engine"},
 		"OLLAMA_REMOTES":            {"OLLAMA_REMOTES", Remotes(), "Allowed hosts for remote models (default \"ollama.com\")"},
+
+		// Distributed MPI-style framework (see DISTRIBUTED_ARCHITECTURE.md).
+		"OLLAMA_NODE_MODE":          {"OLLAMA_NODE_MODE", NodeMode(), "Distributed mode: standalone (default), primary, or secondary"},
+		"OLLAMA_PRIMARY_HOST":       {"OLLAMA_PRIMARY_HOST", PrimaryHost(), "host:port of the Primary node for Secondary mode"},
+		"OLLAMA_COLLECTIVE":         {"OLLAMA_COLLECTIVE", Collective(), "Comma-separated collectives this Secondary joins at startup"},
+		"OLLAMA_DEFAULT_COLLECTIVE": {"OLLAMA_DEFAULT_COLLECTIVE", DefaultCollective(), "Default collective used by a Primary when callers do not specify one"},
+		"OLLAMA_SPPR_MODEL":         {"OLLAMA_SPPR_MODEL", SPPRModel(), "Override the SPPR linguistics-trained model (default: qwen2.5)"},
+		"OLLAMA_DISTRIBUTED_CONFIG": {"OLLAMA_DISTRIBUTED_CONFIG", DistributedConfigPath(), "Path to the distributed config file (default: ~/.ollama/distributed.yaml)"},
+		"OLLAMA_TRANSPORT":          {"OLLAMA_TRANSPORT", TransportProtocol(), "Primary↔Secondary transport: grpc (default) or http2-sse"},
 
 		// Informational
 		"HTTP_PROXY":  {"HTTP_PROXY", String("HTTP_PROXY")(), "HTTP proxy"},
