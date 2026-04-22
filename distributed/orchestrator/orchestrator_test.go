@@ -524,14 +524,6 @@ func TestStarvationMonitor(t *testing.T) {
 	}
 }
 
-func TestStarvationIntegratesIntoDispatch(t *testing.T) {
-	// The arithmetic is covered by TestAllocateFormula and the live
-	// index is covered by TestStarvationMonitor; Dispatch simply calls
-	// allocate(... , StarvationIndex(), ...) so no separate integration
-	// test is needed beyond those two.
-	t.Skip("covered by TestAllocateFormula + TestStarvationMonitor")
-}
-
 func TestConcatCoalescer(t *testing.T) {
 	c := ConcatCoalescer()
 	out, err := c.Coalesce(context.Background(), []string{"a", "b", "c"})
@@ -605,4 +597,102 @@ func waitFor(t *testing.T, pred func() bool, timeout time.Duration) {
 	if !pred() {
 		t.Fatalf("timeout waiting for condition")
 	}
+}
+
+// --- Snapshot ---
+
+func TestSnapshotEmpty(t *testing.T) {
+o, _ := New(Options{Cfg: testCfg(), Dispatcher: &fakeDispatcher{}})
+snap := o.Snapshot()
+if len(snap.Nodes) != 0 || len(snap.Collectives) != 0 || len(snap.Jobs) != 0 {
+t.Fatalf("expected empty, got %+v", snap)
+}
+if snap.StarvationIndex <= 0 || snap.MaxNodes != 4 {
+t.Fatalf("unexpected: %+v", snap)
+}
+if snap.CapturedAt.IsZero() {
+t.Fatal("captured_at missing")
+}
+}
+
+func TestSnapshotNodesAndCollectives(t *testing.T) {
+o, _ := New(Options{Cfg: testCfg(), Dispatcher: &fakeDispatcher{}})
+id1 := mustIdentity(t, "c1", 3)
+id1.Persona = "coder"
+id2 := mustIdentity(t, "c1", 1)
+id3 := mustIdentity(t, "c2", 5)
+registerAndAvailable(t, o, id1)
+registerAndAvailable(t, o, id2)
+registerAndAvailable(t, o, id3)
+// Knock id2 into Syncing so the counts differ.
+_ = o.ReportStateUpdate(context.Background(), transport.StateUpdate{NodeID: id2.ID, From: state.Available, To: state.Syncing})
+
+snap := o.Snapshot()
+if len(snap.Nodes) != 3 {
+t.Fatalf("nodes=%d", len(snap.Nodes))
+}
+// Nodes sorted by ID.
+for i := 1; i < len(snap.Nodes); i++ {
+if snap.Nodes[i-1].ID >= snap.Nodes[i].ID {
+t.Fatalf("not sorted: %+v", snap.Nodes)
+}
+}
+// Collectives sorted.
+if len(snap.Collectives) != 2 {
+t.Fatalf("collectives=%+v", snap.Collectives)
+}
+if snap.Collectives[0].Name != "c1" || snap.Collectives[1].Name != "c2" {
+t.Fatalf("sort order: %+v", snap.Collectives)
+}
+c1 := snap.Collectives[0]
+if c1.NodeCount != 2 || c1.AvailCount != 1 {
+t.Fatalf("c1 counts: %+v", c1)
+}
+// Persona surfaced.
+var sawPersona bool
+for _, n := range snap.Nodes {
+if n.Persona == "coder" {
+sawPersona = true
+}
+}
+if !sawPersona {
+t.Fatal("persona not surfaced")
+}
+}
+
+func TestSnapshotIncludesActiveJob(t *testing.T) {
+fd := &fakeDispatcher{}
+o, _ := New(Options{Cfg: testCfg(), Dispatcher: fd})
+registerAndAvailable(t, o, mustIdentity(t, "c1", 1))
+job := Job{ID: "j", Model: "m", Segments: []sppr.Segment{{ID: "s", Text: "x"}}}
+done := make(chan struct{})
+go func() {
+defer close(done)
+_, _ = o.Dispatch(context.Background(), job)
+}()
+waitFor(t, func() bool { return len(fd.Assigns()) == 1 }, time.Second)
+
+snap := o.Snapshot()
+if len(snap.Jobs) != 1 || snap.Jobs[0].ID != "j" {
+t.Fatalf("jobs=%+v", snap.Jobs)
+}
+if snap.Jobs[0].Segments != 1 {
+t.Fatalf("segments=%+v", snap.Jobs[0])
+}
+// One node in this job should report the job in ActiveJobs.
+var sawActive bool
+for _, n := range snap.Nodes {
+for _, j := range n.ActiveJobs {
+if j == "j" {
+sawActive = true
+}
+}
+}
+if !sawActive {
+t.Fatalf("active jobs not tracked: %+v", snap.Nodes)
+}
+
+// Close out so goroutine returns.
+_ = o.SendSegmentEvent(context.Background(), transport.SegmentEvent{JobID: "j", SegmentID: "s", Kind: transport.SegmentDone})
+<-done
 }

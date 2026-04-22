@@ -257,6 +257,133 @@ func (o *Orchestrator) StarvationIndex() float64 {
 }
 
 // ---------------------------------------------------------------------
+// Snapshot (read-only view for operators and the Dashboard UI)
+// ---------------------------------------------------------------------
+
+// NodeSnapshot is a point-in-time view of a registered Secondary.
+type NodeSnapshot struct {
+	ID            string      `json:"id"`
+	Hostname      string      `json:"hostname"`
+	Collective    string      `json:"collective"`
+	Persona       string      `json:"persona,omitempty"`
+	State         state.State `json:"state"`
+	AdvertisedLPU float64     `json:"advertised_lpu"`
+	CurrentLPU    float64     `json:"current_lpu"`
+	LastHeartbeat time.Time   `json:"last_heartbeat"`
+	ActiveJobs    []string    `json:"active_jobs,omitempty"`
+}
+
+// CollectiveSnapshot aggregates nodes sharing a collective label.
+type CollectiveSnapshot struct {
+	Name       string   `json:"name"`
+	MaxNodes   int      `json:"max_nodes"`
+	NodeCount  int      `json:"node_count"`
+	AvailCount int      `json:"available_count"`
+	AvgLPU     float64  `json:"avg_lpu"`
+	NodeIDs    []string `json:"node_ids"`
+}
+
+// JobSnapshot is a point-in-time view of an in-flight job.
+type JobSnapshot struct {
+	ID         string   `json:"id"`
+	Collective string   `json:"collective"`
+	Segments   int      `json:"segments"`
+	Nodes      []string `json:"nodes"`
+	Completed  int      `json:"completed"`
+}
+
+// Snapshot is the full read-only view the Dashboard consumes.
+type Snapshot struct {
+	Nodes           []NodeSnapshot       `json:"nodes"`
+	Collectives     []CollectiveSnapshot `json:"collectives"`
+	Jobs            []JobSnapshot        `json:"jobs"`
+	StarvationIndex float64              `json:"starvation_index"`
+	MaxNodes        int                  `json:"max_nodes_per_collective"`
+	CapturedAt      time.Time            `json:"captured_at"`
+}
+
+// Snapshot returns a point-in-time view of the orchestrator's state.
+// It is safe to call from any goroutine; fields in the returned value
+// are copies — mutating them does not affect orchestrator state.
+func (o *Orchestrator) Snapshot() Snapshot {
+	o.mu.Lock()
+	nodes := make([]NodeSnapshot, 0, len(o.reg))
+	// Aggregate by collective in a single pass.
+	aggByCollective := make(map[string]*CollectiveSnapshot)
+	for id, n := range o.reg {
+		jobs := make([]string, 0, len(o.perNodeJobs[id]))
+		for jid := range o.perNodeJobs[id] {
+			jobs = append(jobs, jid)
+		}
+		sort.Strings(jobs)
+		ns := NodeSnapshot{
+			ID:            string(id),
+			Hostname:      n.identity.Hostname,
+			Collective:    n.identity.Collective,
+			Persona:       n.identity.Persona,
+			State:         n.state,
+			AdvertisedLPU: n.identity.AdvertisedLPU,
+			CurrentLPU:    n.currentLPU,
+			LastHeartbeat: n.lastHeartbeat,
+			ActiveJobs:    jobs,
+		}
+		nodes = append(nodes, ns)
+
+		c := aggByCollective[n.identity.Collective]
+		if c == nil {
+			c = &CollectiveSnapshot{Name: n.identity.Collective, MaxNodes: o.cfg.MaxNodesPerCollective}
+			aggByCollective[n.identity.Collective] = c
+		}
+		c.NodeCount++
+		if n.state == state.Available {
+			c.AvailCount++
+		}
+		c.AvgLPU += n.currentLPU
+		c.NodeIDs = append(c.NodeIDs, string(id))
+	}
+	jobs := make([]JobSnapshot, 0, len(o.jobs))
+	for _, j := range o.jobs {
+		js := JobSnapshot{
+			ID:         j.id,
+			Collective: j.collective,
+			Segments:   len(j.segments),
+		}
+		for _, id := range j.nodes {
+			js.Nodes = append(js.Nodes, string(id))
+		}
+		for _, d := range j.done {
+			if d {
+				js.Completed++
+			}
+		}
+		jobs = append(jobs, js)
+	}
+	o.mu.Unlock()
+
+	// Finalize collective averages and sort everything for deterministic output.
+	collectives := make([]CollectiveSnapshot, 0, len(aggByCollective))
+	for _, c := range aggByCollective {
+		if c.NodeCount > 0 {
+			c.AvgLPU = c.AvgLPU / float64(c.NodeCount)
+		}
+		sort.Strings(c.NodeIDs)
+		collectives = append(collectives, *c)
+	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
+	sort.Slice(collectives, func(i, j int) bool { return collectives[i].Name < collectives[j].Name })
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
+
+	return Snapshot{
+		Nodes:           nodes,
+		Collectives:     collectives,
+		Jobs:            jobs,
+		StarvationIndex: o.StarvationIndex(),
+		MaxNodes:        o.cfg.MaxNodesPerCollective,
+		CapturedAt:      time.Now(),
+	}
+}
+
+// ---------------------------------------------------------------------
 // transport.Primary implementation
 // ---------------------------------------------------------------------
 
@@ -814,3 +941,4 @@ func findSegmentIndex(segs []sppr.Segment, segID string) int {
 
 // Compile-time assertions.
 var _ transport.Primary = (*Orchestrator)(nil)
+

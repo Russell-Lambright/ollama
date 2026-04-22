@@ -20,6 +20,7 @@ The authoritative specification is [`../DISTRIBUTED_ARCHITECTURE.md`](../DISTRIB
 | `distributed/orchestrator`  | Primary scheduler, starvation monitor, execution/correlation    | 5     |
 | `distributed/modelsync`     | Model fan-out and manifest-diff sync                            | 6     |
 | `distributed/dashboard`     | HTTP snapshot API + single-page UI for operators                | 7     |
+| `distributed/integration`   | End-to-end tests wiring every module together                   | 8     |
 
 Two new packages live outside `distributed/`:
 
@@ -46,8 +47,8 @@ This initiative ships in eight sequential PRs. Every PR must:
 | 5a    | Orchestrator scheduler + starvation monitor             | ✅ landed |
 | 5b    | Execution, correlation, QA coherence pass               | ✅ landed |
 | 6     | Model synchronization                                   | ✅ landed |
-| 7     | Distributed Dashboard UI                                | 🚧 in progress |
-| 8     | Integration tests & coverage gate (≥ 90 % on new code)  | 🚧 in progress |
+| 7     | Distributed Dashboard UI                                | ✅ landed |
+| 8     | Integration tests & coverage gate (≥ 90 % on new code)  | ✅ landed |
 
 ## Cross-cutting rules
 
@@ -61,3 +62,30 @@ This initiative ships in eight sequential PRs. Every PR must:
    exist, the flag always wins.
 4. **Standalone is the default.** If `--mode` is omitted, none of this code
    may be in the hot path.
+
+## Documentation
+
+The full operator and developer documentation with mermaid diagrams
+lives in [`../docs/distributed/`](../docs/distributed/):
+
+- [`overview.md`](../docs/distributed/overview.md) — architecture and component diagram
+- [`lifecycle.md`](../docs/distributed/lifecycle.md) — node state machine
+- [`request-flow.md`](../docs/distributed/request-flow.md) — sequence diagrams for distributed and fallback paths
+- [`operations.md`](../docs/distributed/operations.md) — CLI flags, env, config YAML, dashboard tour
+- [`examples.md`](../docs/distributed/examples.md) — practical code + curl examples
+
+## Package coverage (last measured)
+
+| Package | Coverage |
+| ------- | -------- |
+| `distributed/cancel`       | 100.0 % |
+| `distributed/config`       |  93.0 % |
+| `distributed/dashboard`    |  98.5 % |
+| `distributed/modelsync`    | 100.0 % |
+| `distributed/node`         |  81.0 % |
+| `distributed/orchestrator` |  90.4 % |
+| `distributed/secondary`    |  81.0 % |
+| `distributed/state`        |  98.3 % |
+| `distributed/transport`    |  93.8 % |
+| `sppr`                     |  97.6 % |
+| `expander`                 | 100.0 % |
