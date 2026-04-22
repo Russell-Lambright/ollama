@@ -173,17 +173,5 @@ func (r *RAMStorage) Delete(index int) {
 	}
 }
 
-// indexes returns the set of layer indices currently in RAM. It is used
-// by [Tiered] for its LRU bookkeeping.
-func (r *RAMStorage) indexes() []int {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]int, 0, len(r.layers))
-	for i := range r.layers {
-		out = append(out, i)
-	}
-	return out
-}
-
 // Ensure RAMStorage satisfies StorageProvider at compile time.
 var _ StorageProvider = (*RAMStorage)(nil)

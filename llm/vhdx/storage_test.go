@@ -144,7 +144,7 @@ func TestRAMStorageConcurrent(t *testing.T) {
 
 	const N = 64
 	var wg sync.WaitGroup
-	for i := 0; i < N; i++ {
+	for i := range N {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -155,7 +155,7 @@ func TestRAMStorageConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		got, err := r.Load(context.Background(), i)
 		if err != nil {
 			t.Fatalf("Load %d: %v", i, err)

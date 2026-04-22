@@ -192,17 +192,5 @@ func (v *VHDXStorage) Close() error {
 	return err
 }
 
-// indexes returns the set of layer indices currently known. It is used
-// by [Tiered] for bookkeeping.
-func (v *VHDXStorage) indexes() []int {
-	v.mu.RLock()
-	defer v.mu.RUnlock()
-	out := make([]int, 0, len(v.index))
-	for i := range v.index {
-		out = append(out, i)
-	}
-	return out
-}
-
 // Ensure VHDXStorage satisfies StorageProvider at compile time.
 var _ StorageProvider = (*VHDXStorage)(nil)

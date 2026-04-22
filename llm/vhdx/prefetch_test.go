@@ -77,7 +77,7 @@ func TestPrefetcherDeduplicates(t *testing.T) {
 
 func TestPrefetcherWorkerCap(t *testing.T) {
 	r := NewRAMStorage()
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		_ = r.Store(context.Background(), Layer{Index: i, Size: 1, Data: []byte{byte(i)}})
 	}
 
@@ -94,7 +94,7 @@ func TestPrefetcherWorkerCap(t *testing.T) {
 	}
 	close(block)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if err := p.Wait(context.Background(), i); err != nil {
 			t.Fatalf("Wait %d: %v", i, err)
 		}

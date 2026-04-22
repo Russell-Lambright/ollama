@@ -20,12 +20,14 @@ func mustStore(t *testing.T, p StorageProvider, layer Layer) {
 // ErrStorageUnavailable, used to simulate a dead cold tier.
 type failingProvider struct{}
 
-func (failingProvider) Name() string                             { return "failing" }
-func (failingProvider) Store(context.Context, Layer) error       { return ErrStorageUnavailable }
-func (failingProvider) Load(context.Context, int) (Layer, error) { return Layer{}, ErrStorageUnavailable }
-func (failingProvider) Size() int64                              { return 0 }
-func (failingProvider) Has(int) bool                             { return false }
-func (failingProvider) Close() error                             { return nil }
+func (failingProvider) Name() string                       { return "failing" }
+func (failingProvider) Store(context.Context, Layer) error { return ErrStorageUnavailable }
+func (failingProvider) Load(context.Context, int) (Layer, error) {
+	return Layer{}, ErrStorageUnavailable
+}
+func (failingProvider) Size() int64  { return 0 }
+func (failingProvider) Has(int) bool { return false }
+func (failingProvider) Close() error { return nil }
 
 func TestTieredHotFirst(t *testing.T) {
 	hot := NewRAMStorage()
