@@ -283,6 +283,12 @@ var (
 	VkVisibleDevices      = String("GGML_VK_VISIBLE_DEVICES")
 	GpuDeviceOrdinal      = String("GPU_DEVICE_ORDINAL")
 	HsaOverrideGfxVersion = String("HSA_OVERRIDE_GFX_VERSION")
+
+	// VhdxOffloadPath points to the directory containing (or destined to
+	// contain) the VHDX virtual disk used to offload model layers when
+	// VRAM and system RAM are insufficient. When empty, VHDX offloading
+	// is disabled. Windows only.
+	VhdxOffloadPath = String("OLLAMA_VHDX_OFFLOAD_PATH")
 )
 
 func Uint(key string, defaultValue uint) func() uint {
@@ -387,6 +393,10 @@ func AsMap() map[string]EnvVar {
 		ret["GPU_DEVICE_ORDINAL"] = EnvVar{"GPU_DEVICE_ORDINAL", GpuDeviceOrdinal(), "Set which AMD devices are visible by numeric ID"}
 		ret["HSA_OVERRIDE_GFX_VERSION"] = EnvVar{"HSA_OVERRIDE_GFX_VERSION", HsaOverrideGfxVersion(), "Override the gfx used for all detected AMD GPUs"}
 		ret["OLLAMA_VULKAN"] = EnvVar{"OLLAMA_VULKAN", EnableVulkan(), "Enable experimental Vulkan support"}
+	}
+
+	if runtime.GOOS == "windows" {
+		ret["OLLAMA_VHDX_OFFLOAD_PATH"] = EnvVar{"OLLAMA_VHDX_OFFLOAD_PATH", VhdxOffloadPath(), "Directory containing a VHDX virtual disk used to offload model layers when VRAM and system RAM are insufficient"}
 	}
 
 	return ret

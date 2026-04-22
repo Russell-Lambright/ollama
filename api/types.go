@@ -828,7 +828,10 @@ type ProcessModelResponse struct {
 	Details       ModelDetails `json:"details,omitempty"`
 	ExpiresAt     time.Time    `json:"expires_at"`
 	SizeVRAM      int64        `json:"size_vram"`
-	ContextLength int          `json:"context_length"`
+	// SizeVHDX is the portion of the model offloaded to a VHDX virtual
+	// disk, in bytes. Zero when VHDX offloading is not in use.
+	SizeVHDX      int64 `json:"size_vhdx,omitempty"`
+	ContextLength int   `json:"context_length"`
 }
 
 type TokenResponse struct {
