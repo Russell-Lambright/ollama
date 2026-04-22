@@ -44,7 +44,7 @@ This initiative ships in eight sequential PRs. Every PR must:
 | 4     | SPPR pipeline stage                                     | ✅ landed |
 | 5a    | Orchestrator scheduler + starvation monitor             | ✅ landed |
 | 5b    | Execution, correlation, QA coherence pass               | ✅ landed |
-| 6     | Model synchronization                                   | 🚧 in progress |
+| 6     | Model synchronization                                   | ✅ landed |
 | 7     | Distributed Dashboard UI                                | ⏳        |
 | 8     | Integration tests & coverage gate (≥ 90 % on new code)  | ⏳        |
 
