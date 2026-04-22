@@ -41,7 +41,7 @@ This initiative ships in eight sequential PRs. Every PR must:
 | 1     | Configuration: typed config, personas, YAML loader      | ✅ landed |
 | 2     | Node identity, state machine, transport                 | ✅ landed |
 | 3     | Secondary mode runtime                                  | ✅ landed |
-| 4     | SPPR pipeline stage                                     | 🚧 in progress |
+| 4     | SPPR pipeline stage                                     | ✅ landed |
 | 5a    | Orchestrator scheduler + starvation monitor             | ⏳        |
 | 5b    | Execution, correlation, QA coherence pass               | ⏳        |
 | 6     | Model synchronization                                   | ⏳        |
