@@ -402,6 +402,10 @@ func (s *Server) VRAMByGPU(id ml.DeviceID) uint64 {
 	return s.vramSize
 }
 
+// VHDXSize reports bytes offloaded to a VHDX virtual disk. The image
+// generation server does not use VHDX offloading so this is always zero.
+func (s *Server) VHDXSize() uint64 { return 0 }
+
 // ContextLength returns the context length (not applicable for image generation).
 func (s *Server) ContextLength() int {
 	return 0
