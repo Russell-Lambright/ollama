@@ -81,6 +81,16 @@ just wasn't sharded.
 - Personas are predefined in configuration (`~/.ollama/distributed.yaml`).
 - Secondary nodes can request a target collective and persona at startup.
 - The Primary can force a persona on a node, or overlay one via the UI.
+- **Collective-wide persona application:** the Primary can apply a
+  persona to every node in a collective as a single operation (Node Tab,
+  Collective View). The orchestrator fans the change out to all
+  current members; each affected node transitions through `Training`
+  (per §4) back to `Available`. The operation is atomic from the
+  operator's point of view — the UI reports aggregate progress and
+  per-node success/failure — but individual nodes apply independently,
+  so a failure on one node does not roll back the others. Any nodes
+  that join the collective after the operation also inherit the
+  persona until it is explicitly changed or removed.
 - Personas persist until explicitly removed or replaced.
 
 ## 4. Node states
@@ -145,7 +155,10 @@ A new tab in the desktop/webview UI with:
 - **Secondary Nodes** table: state badge, LPU (weighted GPU + CPU average),
   collective, persona, context menu (*Remove persona*, *Apply new persona*).
 - **Collective View**: member count / max, live average LPU, default
-  collective selector.
+  collective selector, and a context menu to **apply or remove a
+  persona across the entire collective** in one action (see §3). The
+  UI shows aggregate progress (e.g. *"Applying ‘code-reviewer’: 4 / 7
+  nodes training…"*) and surfaces per-node outcomes on completion.
 
 ## 7. Testing
 
