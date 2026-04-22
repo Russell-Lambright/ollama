@@ -263,11 +263,11 @@ func TestPlanRendererErrorSurfaces(t *testing.T) {
 	}
 }
 
-func TestHasOnlySignificantWhitespace(t *testing.T) {
-	if !HasOnlySignificantWhitespace("   \t\n  ") {
+func TestIsWhitespaceOnly(t *testing.T) {
+	if !IsWhitespaceOnly("   \t\n  ") {
 		t.Fatal("expected true for whitespace-only")
 	}
-	if HasOnlySignificantWhitespace("  x ") {
+	if IsWhitespaceOnly("  x ") {
 		t.Fatal("expected false for non-whitespace")
 	}
 }

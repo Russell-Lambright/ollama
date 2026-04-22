@@ -3,7 +3,6 @@ package secondary
 import (
 	"context"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -325,7 +324,3 @@ func containsTransition(us []transport.StateUpdate, from, to state.State) bool {
 	}
 	return false
 }
-
-// Unused in tests but prevents an "imported and not used" if we later
-// pare down imports.
-var _ = sync.Mutex{}

@@ -290,10 +290,9 @@ func Run(ctx context.Context, prompt string, opts PlanOptions) (Plan, error) {
 	return plan, nil
 }
 
-// HasOnlySignificantWhitespace reports whether s contains any
-// non-whitespace runes. Exposed for callers that want to validate
-// prompts before invoking Run.
-func HasOnlySignificantWhitespace(s string) bool {
+// IsWhitespaceOnly reports whether s contains no non-whitespace runes.
+// Exposed for callers that want to validate prompts before invoking Run.
+func IsWhitespaceOnly(s string) bool {
 	for _, r := range s {
 		if !unicode.IsSpace(r) {
 			return false
