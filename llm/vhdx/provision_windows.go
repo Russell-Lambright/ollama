@@ -5,7 +5,6 @@ package vhdx
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -119,6 +118,3 @@ func preallocateFile(path string, size int64) error {
 	}
 	return nil
 }
-
-// Ensure io is referenced to simplify future extension points.
-var _ = io.Copy

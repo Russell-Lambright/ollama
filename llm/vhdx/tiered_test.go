@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+// mustStore is a test helper that fails the test if Store returns an
+// error. It makes the Tiered test cases clearer than bare `_ =` calls
+// and ensures silent storage failures cannot mask intended behavior.
+func mustStore(t *testing.T, p StorageProvider, layer Layer) {
+	t.Helper()
+	if err := p.Store(context.Background(), layer); err != nil {
+		t.Fatalf("Store(layer %d): %v", layer.Index, err)
+	}
+}
+
 // failingProvider is a StorageProvider that always returns
 // ErrStorageUnavailable, used to simulate a dead cold tier.
 type failingProvider struct{}
@@ -24,8 +34,8 @@ func TestTieredHotFirst(t *testing.T) {
 	defer tr.Close()
 
 	// Different bytes in each tier so we can detect which one was read.
-	_ = hot.Store(context.Background(), Layer{Index: 1, Size: 3, Data: []byte("HOT")})
-	_ = cold.Store(context.Background(), Layer{Index: 1, Size: 4, Data: []byte("COLD")})
+	mustStore(t, hot, Layer{Index: 1, Size: 3, Data: []byte("HOT")})
+	mustStore(t, cold, Layer{Index: 1, Size: 4, Data: []byte("COLD")})
 
 	got, err := tr.Load(context.Background(), 1)
 	if err != nil {
@@ -42,7 +52,7 @@ func TestTieredColdPromotes(t *testing.T) {
 	tr := NewTiered(hot, cold)
 	defer tr.Close()
 
-	_ = cold.Store(context.Background(), Layer{Index: 7, Size: 5, Data: []byte("hello")})
+	mustStore(t, cold, Layer{Index: 7, Size: 5, Data: []byte("hello")})
 	if hot.Has(7) {
 		t.Fatal("hot should start empty")
 	}
@@ -63,7 +73,7 @@ func TestTieredLRUEviction(t *testing.T) {
 	defer tr.Close()
 
 	for i := 0; i < 3; i++ {
-		_ = cold.Store(context.Background(), Layer{Index: i, Size: 1, Data: []byte{byte(i)}})
+		mustStore(t, cold, Layer{Index: i, Size: 1, Data: []byte{byte(i)}})
 	}
 	for i := 0; i < 3; i++ {
 		if _, err := tr.Load(context.Background(), i); err != nil {
@@ -85,7 +95,7 @@ func TestTieredColdUnavailableFallsBackToHot(t *testing.T) {
 	tr := NewTiered(hot, failingProvider{})
 	defer tr.Close()
 
-	_ = hot.Store(context.Background(), Layer{Index: 0, Size: 2, Data: []byte("OK")})
+	mustStore(t, hot, Layer{Index: 0, Size: 2, Data: []byte("OK")})
 	got, err := tr.Load(context.Background(), 0)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
